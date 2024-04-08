@@ -1,0 +1,154 @@
+//The following function computes all the overlattices O of L (up to isomorphism) such that O/L is isomorphic to ZZ/k
+function Overlattices(L,k)
+
+    n:=Rank(L);
+    V:=VectorSpace(Rationals(),n);
+    G:=AutomorphismGroup(L);
+
+    //We compute the action of G on the discriminant group of L
+    MR := MatrixRing(Rationals(), n);
+    A := MatrixGroup<n, Rationals() | [ MR!G.i  : i in [1 .. Ngens(G)]]>;
+    M,LD,f:=DualQuotient(L);
+
+    Q:=[M.i : i in [1..Ngens(M)]];
+    F:=[A.i : i in [1..Ngens(A)]];
+    I:=[];
+
+    for a in F do
+        img:=[];
+        for q in Q do
+            x1:=L!(#M*(q @@ f));
+            x:=V!Coordinates(L,x1)/#M;
+            aq:=f(LD!(CoordinatesToElement(L,#M*(x^a))/#M));
+            Append(~img,aq);
+        end for;
+        Append(~I,img);
+    end for;
+
+    Act:=AutomorphismGroup(M,Q,I);
+
+    Map:=IdentityHomomorphism(Act);
+
+    //We list all the isotropic vectors in the discriminant group of L of order precisely k
+    H:={m : m in M | (k*m eq Zero(M)) and (IsEmpty({d : d in Exclude(Divisors(k),k) | d*m eq Zero(M)})) and (Norm(m @@ f) eq Floor(Norm(m @@ f))) and (Floor(Norm(m @@ f)) mod 2 eq 0 )};
+
+    S:=[];
+    List:=[];
+
+    //We choose an element of H, and we remove all its orbit under the group G. This is because vectors in the same orbit
+    //give rise to isometric overlattices
+    while (not IsEmpty(H)) do
+        h:=M!Random(H);
+        O:=Orbit(Act,Map,h);
+        x1:=L!(#M*(h @@ f));
+        Append(~S,x1);
+        H:=H diff O;
+    end while;
+
+    //We create the list of overlattices
+    for s in S do
+        LN:=ext<L | s/#M>;
+        Append(~List,LN);
+    end for;
+
+    return List;
+
+end function;
+
+//The next function computes whether L admits a nontrivial overlattice
+function IsThereAnOverlattice(L)
+
+    //We write down the possible indices of cyclic overlattices of L
+    PossibleIndices:=[k : k in Divisors(Determinant(L)) | (k ne 1) and (Determinant(L) mod (k^2) eq 0)];
+
+    for k in PossibleIndices do
+        O:=Overlattices(L,k);
+        if #O gt 0 then
+            return true;
+        end if;
+    end for;
+
+    return false;
+
+end function;
+
+//function to import the Gram matrices of lattices of zero entropy
+function ImportListMatrices(filename,dimension)
+  F := Open(filename, "r");
+  c := dimension^2;
+  r := [];
+  while true do
+    s := Gets(F);
+    if IsEof(s) then break; end if;
+    if (#s eq 0) or (s[1] eq "/") then continue; end if;
+    sS := Split(s, " ");
+    for i in [1..#sS] do
+	a1:=Split(sS[i],";");
+	sS[i]:=a1[1];
+    end for;
+    sS[1] := Split(sS[1],"[")[1];
+    sS[#sS] := Split(sS[#sS],"]")[1];
+    t := [StringToInteger(a): a in sS[1..(#sS)]];
+    if #t ne c then continue; end if;
+    A := Matrix(Integers(),dimension, t);
+    Append(~r,A);
+  end while;
+  return r;
+end function;
+
+//We add the Picard lattices of K3 surfaces with finite automorphism group and a unique elliptic fibration, whose
+//classification can be done by hand
+ListUniqueEllipticFibrationFiniteGenera := [];
+
+for dim in [3..12] do
+	Listdim := ImportListMatrices("Finite.txt", dim);
+	for M in Listdim do
+		if (M[1,1] eq 0) and (M[1,2] eq 1) then
+			L:=LatticeWithGram(-Submatrix(M,[3..NumberOfRows(M)],[3..NumberOfRows(M)]));
+			Append(~ListUniqueEllipticFibrationFiniteGenera, Genus(L));
+		end if;
+	end for;
+end for;
+
+//We now consider the Borcherds lattices, or equivalently the Picard lattices of K3 surfaces with zero entropy.
+//The Gram matrices are written down with the convention of "Borcherds lattices and K3 surfaces of zero entropy" by
+//Brandhorst--Mezzedimi, Lemma 4.1. In particular the first basis vector is an elliptic fiber F, and the number
+//in position [1,2] is its divisibility. Moreover the submatrix obtained by removing the first and second rows and columns
+//is the Gram matrix of F^\perp / F.
+
+//Choose the rank between 3 and 12
+d:=3;
+
+List:=ImportListMatrices("Borcherds.txt",d);
+
+ListUniqueEllipticFibration:=[];
+ListUniqueEllipticFibrationGenera:=[];
+
+for M in List do
+	if M[1,2] eq 1 then
+	//in this case the lattice is of the form U + L, with L given by the submatrix of F^\perp / F
+	L:=LatticeWithGram(-Submatrix(M,[3..d],[3..d]));
+	//We check whether L is unique in its genus and it has no nontrivial overlattice. If so, we add it to the list
+	if IsThereAnOverlattice(L) eq false then
+		if #GenusRepresentatives(L) eq 1 then
+			ListUniqueEllipticFibration:=ListUniqueEllipticFibration cat [M];
+			ListUniqueEllipticFibrationGenera:=ListUniqueEllipticFibrationGenera cat [Genus(L)];
+		end if;
+	end if;
+	end if;
+end for;
+
+//We now consider the lattices that do not split as U+L.
+
+ListUniqueEllipticFibrationMatrices:=[];
+
+for M in List do
+	if M[1,2] ne 1 then
+		L:=LatticeWithGram(-Submatrix(M,[3..d],[3..d]));
+		//By construction the overlattice obtained by dividing the first basis vector by its divisibility is
+		//isometric to U+L.
+		if (Genus(L) in ListUniqueEllipticFibrationFiniteGenera) or (Genus(L) in ListUniqueEllipticFibrationGenera) then
+			ListUniqueEllipticFibrationMatrices:=ListUniqueEllipticFibrationMatrices cat [M];
+		end if;
+	end if;
+end for;
